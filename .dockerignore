@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+notebooks/
+
+# Logs and outputs (will be mounted as volumes)
+logs/
+checkpoints/
+results/
+
+# Documentation
+*.md
+!requirements.txt
+
+# PDF files
+*.pdf
+
+# Temporary files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db

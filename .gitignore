@@ -1,0 +1,15 @@
+*.png
+*.pdf
+*.md
+logs/
+**/_pycache/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.pyw
+**/*.pyz
+**/*.pywz
+**/*.pyzw
+**/*.pyzwz
+**/*.pyzwzw
+**/*.pyzwzwz

@@ -1,0 +1,38 @@
+# GCN-Transformer-RL SAGIN Intelligent Routing
+# Python 3.10+ required
+
+# Deep Learning Framework
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Graph Neural Networks
+torch-geometric>=2.4.0
+torch-scatter>=2.1.0
+torch-sparse>=0.6.0
+
+# Reinforcement Learning
+gymnasium>=0.29.0
+
+# Scientific Computing
+numpy>=1.24.0
+scipy>=1.10.0
+networkx>=3.0
+
+# Configuration
+pyyaml>=6.0
+omegaconf>=2.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+tensorboard>=2.13.0
+
+# Utilities
+tqdm>=4.65.0
+pandas>=2.0.0
+
+# Development (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# mypy>=1.0.0

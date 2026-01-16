@@ -1,0 +1,192 @@
+# =============================================================================
+# SAGIN Intelligent Routing - Docker Compose Configuration
+# =============================================================================
+# Services:
+#   - sagin: Main training service
+#   - jupyter: Jupyter Lab for interactive development
+#   - tensorboard: TensorBoard for training visualization
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Main Training Service
+  # ---------------------------------------------------------------------------
+  sagin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    image: sagin-routing:latest
+    container_name: sagin-training
+
+    # GPU Support (NVIDIA)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONPATH=/app
+
+    # Volume mounts for persistence
+    volumes:
+      - ./logs:/app/logs
+      - ./checkpoints:/app/checkpoints
+      - ./results:/app/results
+      - ./configs:/app/configs
+      - ./data:/app/data
+
+    # Working directory
+    working_dir: /app
+
+    # Network
+    networks:
+      - sagin-network
+
+    # Default command
+    command: python src/experiments/train.py --config configs/routing_config.yaml
+
+    # Restart policy
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # Jupyter Lab Service
+  # ---------------------------------------------------------------------------
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: sagin-routing:dev
+    container_name: sagin-jupyter
+
+    # Only start with profile
+    profiles:
+      - jupyter
+      - dev
+      - all
+
+    # GPU Support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/app
+      - JUPYTER_ENABLE_LAB=yes
+
+    # Mount entire project for development
+    volumes:
+      - ./:/app
+      - jupyter-data:/home/sagin/.jupyter
+
+    ports:
+      - "8888:8888"
+
+    networks:
+      - sagin-network
+
+    # Jupyter Lab command
+    command: >
+      jupyter lab
+      --ip=0.0.0.0
+      --port=8888
+      --no-browser
+      --allow-root
+      --NotebookApp.token=''
+      --NotebookApp.password=''
+
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # TensorBoard Service
+  # ---------------------------------------------------------------------------
+  tensorboard:
+    image: tensorflow/tensorflow:latest
+    container_name: sagin-tensorboard
+
+    # Only start with profile
+    profiles:
+      - tensorboard
+      - monitoring
+      - all
+
+    volumes:
+      - ./logs:/logs:ro
+
+    ports:
+      - "6006:6006"
+
+    networks:
+      - sagin-network
+
+    command: tensorboard --logdir=/logs --host=0.0.0.0 --port=6006
+
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Shell Service (for debugging)
+  # ---------------------------------------------------------------------------
+  shell:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    image: sagin-routing:dev
+    container_name: sagin-shell
+
+    # Only start with profile
+    profiles:
+      - shell
+      - dev
+
+    # GPU Support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONPATH=/app
+
+    volumes:
+      - ./:/app
+
+    networks:
+      - sagin-network
+
+    stdin_open: true
+    tty: true
+
+    command: bash
+
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  sagin-network:
+    driver: bridge
+
+# -----------------------------------------------------------------------------
+# Volumes
+# -----------------------------------------------------------------------------
+volumes:
+  jupyter-data:
+    driver: local
