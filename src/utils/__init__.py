@@ -1,5 +1,4 @@
-# Utils module
-from .logger import Logger, setup_logger
-from .metrics import MetricsTracker, BaselineComparator
+from .logger import setup_logger
+from .metrics import MetricsTracker
 
-__all__ = ['Logger', 'setup_logger', 'MetricsTracker', 'BaselineComparator']
+__all__ = ['setup_logger', 'MetricsTracker']

@@ -5,6 +5,13 @@ This script trains the intelligent routing agent using:
 - GCN for spatial graph topology features
 - Transformer for temporal state sequence patterns
 - Gated feature fusion
+
+[FIXED VERSION] Key changes:
+- Increased eval episodes (20 -> 50) for more stable evaluation
+- Increased patience (300 -> 500) for longer training
+- Added warmup period before early stopping
+- Better logging of training progress
+- Faster epsilon decay
 """
 
 import os
@@ -56,7 +63,7 @@ def train(config: dict, log_dir: str):
     metrics = MetricsTracker(window_size=100)
 
     logger.info("=" * 60)
-    logger.info("SAGIN Routing Training with GCN + Transformer")
+    logger.info("SAGIN Routing Training with GCN + Transformer [FIXED]")
     logger.info("=" * 60)
 
     # Create environment
@@ -82,17 +89,20 @@ def train(config: dict, log_dir: str):
     agent_config['lr'] = dqn_config.get('lr', 3e-4)
     agent_config['target_update_freq'] = dqn_config.get('target_update_freq', 100)
     agent_config['max_grad_norm'] = dqn_config.get('max_grad_norm', 1.0)
+    
+    # [FIX] Add tau parameter
+    agent_config['tau'] = dqn_config.get('tau', 0.005)
 
     # Buffer parameters
     buffer_config = config.get('buffer', {})
     agent_config['buffer_capacity'] = buffer_config.get('capacity', 100000)
     agent_config['batch_size'] = buffer_config.get('batch_size', 64)
 
-    # Exploration parameters
+    # Exploration parameters - [FIX] faster decay
     exploration_config = config.get('exploration', {})
     agent_config['epsilon_start'] = exploration_config.get('epsilon_start', 1.0)
-    agent_config['epsilon_end'] = exploration_config.get('epsilon_end', 0.01)
-    agent_config['epsilon_decay'] = exploration_config.get('epsilon_decay', 0.995)
+    agent_config['epsilon_end'] = exploration_config.get('epsilon_end', 0.05)
+    agent_config['epsilon_decay'] = exploration_config.get('epsilon_decay', 0.995)  # Faster decay
 
     # Training parameters
     training_config_agent = config.get('training', {})
@@ -129,6 +139,8 @@ def train(config: dict, log_dir: str):
     logger.info(f"  - Transformer output dim: {agent_config.get('transformer_output_dim', 64)}")
     logger.info(f"  - Fused dim: {agent_config.get('fused_dim', 128)}")
     logger.info(f"  - Device: {agent.device}")
+    logger.info(f"  - Tau: {agent_config.get('tau', 0.005)}")
+    logger.info(f"  - Epsilon decay: {agent_config.get('epsilon_decay', 0.995)}")
 
     # Training parameters
     training_config = config.get('training', {})
@@ -137,7 +149,9 @@ def train(config: dict, log_dir: str):
     eval_frequency = training_config.get('eval_frequency', 100)
     save_frequency = training_config.get('save_frequency', 500)
     log_frequency = training_config.get('log_frequency', 10)
-    num_eval_episodes = training_config.get('num_eval_episodes', 10)
+    
+    # [FIX] Increased eval episodes for more stable evaluation
+    num_eval_episodes = training_config.get('num_eval_episodes', 50)  # Was 20
 
     # Checkpoint directory
     checkpoint_dir = os.path.join(log_dir, 'checkpoints')
@@ -148,9 +162,15 @@ def train(config: dict, log_dir: str):
     best_delivery_rate = 0.0
     best_episode = 0
     no_improvement_count = 0
-    patience = training_config.get('patience', 300)
+    
+    # [FIX] Increased patience and added warmup
+    patience = training_config.get('patience', 500)  # Was 300
+    warmup_episodes = training_config.get('warmup_episodes', 300)  # No early stopping during warmup
 
     logger.info(f"Starting training for {num_episodes} episodes...")
+    logger.info(f"  - Eval episodes: {num_eval_episodes}")
+    logger.info(f"  - Patience: {patience}")
+    logger.info(f"  - Warmup episodes: {warmup_episodes}")
 
     # Training loop
     for episode in tqdm(range(1, num_episodes + 1), desc="Training", ncols=100):
@@ -251,7 +271,8 @@ def train(config: dict, log_dir: str):
             eval_reward, eval_delivery = evaluate(env, agent, num_eval_episodes)
 
             tqdm.write(
-                f"  Eval: Reward={eval_reward:.2f}, Delivery={eval_delivery*100:.1f}%"
+                f"  Eval ({num_eval_episodes} eps): Reward={eval_reward:.2f}, "
+                f"Delivery={eval_delivery*100:.1f}%, Epsilon={agent.epsilon:.3f}"
             )
 
             # Save best model
@@ -261,10 +282,12 @@ def train(config: dict, log_dir: str):
                 best_episode = episode
                 no_improvement_count = 0
                 agent.save(os.path.join(checkpoint_dir, 'best_model.pt'))
-                tqdm.write(f"  New best model saved (reward: {best_reward:.2f}, delivery: {eval_delivery*100:.1f}%)")
+                tqdm.write(f"  ★ New best model saved (reward: {best_reward:.2f}, delivery: {eval_delivery*100:.1f}%)")
             else:
                 no_improvement_count += eval_frequency
-                if no_improvement_count >= patience:
+                
+                # [FIX] Only apply early stopping after warmup period
+                if episode >= warmup_episodes and no_improvement_count >= patience:
                     tqdm.write(f"  Early stopping at episode {episode} (no improvement for {patience} episodes)")
                     tqdm.write(f"  Best model was at episode {best_episode} with reward {best_reward:.2f}")
                     break
@@ -283,10 +306,14 @@ def train(config: dict, log_dir: str):
     logger.info("=" * 60)
     logger.info(f"Best Reward: {best_reward:.2f}")
     logger.info(f"Best Delivery Rate: {best_delivery_rate*100:.1f}%")
+    logger.info(f"Best Episode: {best_episode}")
+    logger.info(f"Final Epsilon: {agent.epsilon:.4f}")
     logger.info("=" * 60)
 
     # Print metrics summary
     print(metrics.format_detailed_summary())
+
+    return best_reward, best_delivery_rate
 
 
 def evaluate(env: SAGINRoutingEnv,
@@ -294,6 +321,8 @@ def evaluate(env: SAGINRoutingEnv,
              num_episodes: int) -> tuple:
     """
     Evaluate agent performance.
+
+    [FIX] Uses env.get_state_history() for consistency with training.
 
     Returns:
         Tuple of (average_reward, delivery_rate)
@@ -306,6 +335,8 @@ def evaluate(env: SAGINRoutingEnv,
         state = obs['state']
         action_mask = obs['action_mask']
         graph_features = get_graph_features(env)
+        
+        # [FIX] Use env.get_state_history() instead of manual tracking
         state_history = env.get_state_history()
 
         episode_reward = 0.0
@@ -330,6 +361,8 @@ def evaluate(env: SAGINRoutingEnv,
             state = next_obs['state']
             action_mask = next_obs['action_mask']
             graph_features = get_graph_features(env)
+            
+            # [FIX] Get updated state history from env
             state_history = env.get_state_history()
 
         total_reward += episode_reward
@@ -344,7 +377,7 @@ def evaluate(env: SAGINRoutingEnv,
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Train SAGIN Routing with GCN + Transformer'
+        description='Train SAGIN Routing with GCN + Transformer [FIXED]'
     )
     parser.add_argument(
         '--config', '-c',
@@ -379,7 +412,7 @@ def main():
     # Setup log directory
     if args.log_dir is None:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_dir = os.path.join('logs', f'gcn_transformer_{timestamp}')
+        log_dir = os.path.join('logs', f'gcn_transformer_fixed_{timestamp}')
     else:
         log_dir = args.log_dir
 

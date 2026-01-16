@@ -1,10 +1,5 @@
-# Models module
-from .gcn import GCNEncoder, GCNLayer, LocalGCN
-from .transformer import TemporalTransformer, TemporalEncoder, PositionalEncoding
-from .fusion import FeatureFusion, ConcatFusion, AttentionFusion, GatedFusion
+from .gcn import LocalGCN, GCNEncoder
+from .transformer import TemporalEncoder
+from .fusion import FeatureFusion, GatedFusion
 
-__all__ = [
-    'GCNEncoder', 'GCNLayer', 'LocalGCN',
-    'TemporalTransformer', 'TemporalEncoder', 'PositionalEncoding',
-    'FeatureFusion', 'ConcatFusion', 'AttentionFusion', 'GatedFusion'
-]
+__all__ = ['LocalGCN', 'GCNEncoder', 'TemporalEncoder', 'FeatureFusion', 'GatedFusion']

@@ -1,0 +1,32 @@
+GCN-Transformer-DQN:
+  avg_delay: 4.295964086795015
+  avg_hops: 12.95
+  avg_reward: -5.2306983229132324
+  avg_steps: 12.95
+  path_efficiency: 0.5812998330046301
+  std_reward: 47.1428097633628
+  success_rate: 75.0
+Greedy:
+  avg_delay: 1.6561816761964863
+  avg_hops: 4.65
+  avg_reward: 20.846943085682177
+  avg_steps: 4.66
+  path_efficiency: 0.9888888888888889
+  std_reward: 34.32582826662053
+  success_rate: 90.0
+Random:
+  avg_delay: 4.620818850799033
+  avg_hops: 14.81
+  avg_reward: -8.44962290639907
+  avg_steps: 14.82
+  path_efficiency: 0.45275594300684596
+  std_reward: 44.63780575463212
+  success_rate: 72.0
+Shortest Path:
+  avg_delay: 1.1200942439357846
+  avg_hops: 4.42
+  avg_reward: 25.198522278540054
+  avg_steps: 4.42
+  path_efficiency: 0.8969542899230398
+  std_reward: 23.035317576304074
+  success_rate: 96.0

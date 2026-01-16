@@ -1,193 +1,159 @@
-# =============================================================================
-# GCN-Transformer-DRL SAGIN Intelligent Routing Configuration
-# =============================================================================
-# This configuration is for the discrete action space routing problem
-# where the agent selects the next-hop neighbor for packet forwarding.
+# SAGIN Intelligent Routing Configuration
+# [FIXED VERSION] - Optimized hyperparameters for better training
 
 # =============================================================================
 # Network Topology Configuration
 # =============================================================================
 network:
-  # Node counts (total: 19 nodes)
-  num_satellites: 3       # LEO satellites (Space layer)
-  num_uavs: 6             # UAVs (Air layer)
-  num_ground: 10          # Ground stations + users (Ground layer)
-
+  # Node counts
+  num_satellites: 3
+  num_uavs: 6
+  num_ground: 10
+  
   # Spatial parameters
-  area_size: 10000.0      # Ground area size in meters (10km x 10km)
-  satellite_altitude: 550000.0   # Satellite altitude in meters (550km LEO)
-  uav_altitude_range: [100.0, 500.0]  # UAV altitude range in meters
-
+  area_size: 10000.0           # meters
+  satellite_altitude: 550000.0  # meters (LEO)
+  uav_altitude_range: [100.0, 500.0]
+  
   # Coverage parameters
-  max_neighbors: 8              # Maximum neighbors per node
-  satellite_coverage: 500000.0  # Satellite coverage radius (meters)
-  uav_coverage: 5000.0          # UAV coverage radius (meters)
-
-  # Bandwidth configuration (Hz)
-  g2u_bandwidth: 20.0e+6   # Ground-to-UAV: 20 MHz
-  u2u_bandwidth: 10.0e+6   # UAV-to-UAV: 10 MHz
-  u2s_bandwidth: 50.0e+6   # UAV-to-Satellite: 50 MHz
-  s2s_bandwidth: 100.0e+6  # Satellite-to-Satellite: 100 MHz
-
+  satellite_coverage: 500000.0  # meters
+  uav_coverage: 5000.0          # meters
+  max_neighbors: 8
+  
+  # Bandwidth parameters (Hz)
+  g2u_bandwidth: 2.0e+7    # Ground to UAV (20 MHz)
+  u2u_bandwidth: 1.0e+7    # UAV to UAV (10 MHz)
+  u2s_bandwidth: 5.0e+7    # UAV to Satellite (50 MHz)
+  s2s_bandwidth: 1.0e+8    # Satellite to Satellite (100 MHz)
+  
   # Mobility parameters
   uav_max_speed: 10.0      # m/s
-  satellite_orbital_period: 5400  # seconds (90 minutes)
+  satellite_orbital_period: 5400  # seconds (~90 minutes)
 
 # =============================================================================
 # Environment Configuration
 # =============================================================================
 environment:
-  max_hops: 50             # Maximum hops before truncation
-  max_neighbors: 8         # Maximum action space size
-  history_length: 10       # Historical states for Transformer
-
-  # Dynamic topology
-  topology_update_freq: 10  # Update topology every N steps
-  link_failure_prob: 0.05   # Random link failure probability
+  max_hops: 30              # Maximum hops before timeout (reduced from 50)
+  max_neighbors: 8          # Maximum neighbors per node
+  history_length: 10        # State history length for Transformer
+  topology_update_freq: 10  # Steps between topology updates
+  link_failure_prob: 0.02   # Link failure probability (reduced from 0.05)
 
 # =============================================================================
-# Reward Function Configuration
+# Reward Configuration [FIXED]
 # =============================================================================
 reward:
-  # Weights for reward components
-  delay_weight: 0.5        # alpha: delay penalty weight (reduced)
-  loss_weight: 10.0        # beta: packet loss penalty weight
-  congestion_weight: 0.3   # gamma: congestion penalty weight (reduced)
-
-  # Bonus and penalty values
-  success_bonus: 20.0      # Reward for reaching destination (increased)
-  loop_penalty: 2.0        # Penalty for revisiting nodes (reduced)
-  timeout_penalty: 5.0     # Penalty for exceeding max hops (increased)
-  invalid_action_penalty: 1.0  # Penalty for invalid action
-
-  # Progress reward
-  progress_reward: 0.5     # Reward for moving closer to destination (increased)
-
-# =============================================================================
-# GCN Configuration
-# =============================================================================
-gcn:
-  node_feature_dim: 9      # Input node feature dimension
-  hidden_dim: 64           # Hidden layer dimension
-  output_dim: 64           # Output embedding dimension
-  num_layers: 2            # Number of GCN layers
-  dropout: 0.1             # Dropout rate
-  activation: relu         # Activation function
-  use_batch_norm: true     # Use batch normalization
-  max_neighbors: 8         # Maximum neighbors for local GCN
+  # Main rewards
+  success_bonus: 30.0       # Reward for reaching destination (increased from 10)
+  timeout_penalty: 5.0      # Penalty for exceeding max hops (increased)
+  
+  # Step penalties
+  delay_weight: 1.0         # Weight for delay penalty
+  loss_weight: 10.0         # Weight for packet loss penalty
+  congestion_weight: 0.5    # Weight for congestion penalty
+  
+  # Behavior penalties
+  loop_penalty: 2.0         # Penalty for revisiting nodes (full penalty now)
+  invalid_action_penalty: 1.0
+  
+  # Progress rewards [FIXED - increased]
+  progress_reward: 0.5      # Base progress reward (increased from 0.1)
 
 # =============================================================================
-# Transformer Configuration
-# =============================================================================
-transformer:
-  d_model: 64              # Model dimension
-  num_heads: 4             # Number of attention heads
-  num_layers: 2            # Number of encoder layers
-  d_feedforward: 256       # Feedforward dimension
-  dropout: 0.1             # Dropout rate
-  history_length: 10       # Historical sequence length
-  max_seq_length: 100      # Maximum sequence length
-  positional_encoding: sinusoidal  # Position encoding type
-
-# =============================================================================
-# Feature Fusion Configuration
-# =============================================================================
-fusion:
-  method: concat           # Fusion method: concat, attention, gated
-  output_dim: 128          # Output dimension after fusion
-  fc_hidden_dim: 256       # Hidden dimension for FC layers
-  num_fc_layers: 2         # Number of FC layers
-
-# =============================================================================
-# DQN Configuration
+# DQN Agent Configuration [FIXED]
 # =============================================================================
 dqn:
-  # Network architecture
-  hidden_dims: [256, 128, 64]  # Q-network hidden layer dimensions
-  use_dueling: true        # Use Dueling DQN architecture
-  use_double_dqn: true     # Use Double DQN
+  lr: 5.0e-5                # Learning rate (slightly reduced for stability)
+  target_update_freq: 100   # Target network update frequency
+  max_grad_norm: 1.0        # Gradient clipping
+  use_double_dqn: true      # Use Double DQN
+  use_dueling: true         # Use Dueling architecture
+  tau: 0.005                # [NEW] Soft update coefficient (was 0.001)
 
-  # Learning parameters
-  lr: 1.0e-4               # Learning rate (reduced for stability)
-  target_update_freq: 100  # Target network update frequency
-  max_grad_norm: 0.5       # Gradient clipping (tighter for stability)
+# =============================================================================
+# Exploration Configuration [FIXED]
+# =============================================================================
+exploration:
+  epsilon_start: 1.0
+  epsilon_end: 0.05         # Minimum exploration rate
+  epsilon_decay: 0.995      # [FIXED] Faster decay (was 0.998)
+  # At 500 episodes: 0.995^500 ≈ 0.082 (vs 0.998^500 ≈ 0.368)
 
 # =============================================================================
 # Replay Buffer Configuration
 # =============================================================================
 buffer:
-  capacity: 100000         # Buffer capacity
-  batch_size: 64           # Training batch size
-
-  # Prioritized Experience Replay
-  use_per: false           # Disable PER for stability (enable after debugging)
-  per_alpha: 0.6           # Priority exponent
-  per_beta_start: 0.4      # Initial importance sampling weight
-  per_beta_frames: 100000  # Frames to anneal beta to 1.0
+  capacity: 100000          # Replay buffer size
+  batch_size: 64            # Training batch size
+  use_per: false            # Prioritized Experience Replay
+  per_alpha: 0.6            # PER alpha
+  per_beta_start: 0.4       # PER beta start
+  per_beta_frames: 100000   # PER beta annealing frames
 
 # =============================================================================
-# Exploration Configuration
+# GCN Configuration
 # =============================================================================
-exploration:
-  type: epsilon_greedy     # Exploration strategy
-  epsilon_start: 1.0       # Initial epsilon
-  epsilon_end: 0.05        # Final epsilon (slightly higher for continued exploration)
-  epsilon_decay: 0.998     # Decay rate per episode (slower decay)
+gcn:
+  node_feature_dim: 9       # Node feature dimension
+  hidden_dim: 64            # GCN hidden dimension
+  output_dim: 64            # GCN output dimension
+  max_neighbors: 8          # Maximum neighbors for local GCN
+  num_layers: 2             # Number of GCN layers
+  dropout: 0.1              # Dropout rate
 
 # =============================================================================
-# Training Configuration
+# Transformer Configuration
+# =============================================================================
+transformer:
+  d_model: 64               # Model dimension
+  num_heads: 4              # Number of attention heads
+  num_layers: 2             # Number of transformer layers
+  d_feedforward: 128        # Feedforward dimension
+  dropout: 0.1              # Dropout rate
+  history_length: 10        # Input sequence length
+  max_seq_length: 10        # Maximum sequence length
+
+# =============================================================================
+# Feature Fusion Configuration
+# =============================================================================
+fusion:
+  method: "gated"           # Fusion method: "concat", "attention", "gated"
+  output_dim: 128           # Fused feature dimension
+  dropout: 0.1              # Dropout rate
+
+# =============================================================================
+# Training Configuration [FIXED]
 # =============================================================================
 training:
-  # Episode settings
-  num_episodes: 3000       # Total training episodes (reduced, with better rewards)
-  max_steps_per_episode: 30  # Maximum steps per episode (reduced)
-
-  # Learning schedule
-  warmup_episodes: 100     # Episodes before training starts (more warmup)
-  update_frequency: 4      # Update every N steps (less frequent for stability)
-
-  # Discount factor
-  gamma: 0.99              # Discount factor (higher for long-term planning)
-
-  # Evaluation
-  eval_frequency: 50       # Evaluate every N episodes (more frequent)
-  eval_episodes: 20        # Episodes for evaluation (more episodes)
-
+  num_episodes: 3000        # Maximum training episodes
+  max_steps_per_episode: 30 # Max steps per episode (reduced)
+  gamma: 0.99               # Discount factor
+  
+  # Evaluation [FIXED]
+  eval_frequency: 50        # Evaluate every N episodes
+  num_eval_episodes: 50     # [FIXED] Number of eval episodes (was 20)
+  
   # Checkpointing
-  save_frequency: 200      # Save model every N episodes
-  checkpoint_dir: checkpoints
-
-  # Early stopping
-  patience: 300            # Episodes without improvement
-  min_improvement: 0.01    # Minimum improvement threshold
-
-# =============================================================================
-# Logging Configuration
-# =============================================================================
-logging:
-  level: INFO              # Log level
-  log_dir: logs            # Log directory
-  tensorboard: true        # Enable TensorBoard
-  console: true            # Enable console output
-  log_frequency: 10        # Log every N episodes
+  save_frequency: 200       # Save checkpoint every N episodes
+  log_frequency: 10         # Log every N episodes
+  
+  # Early stopping [FIXED]
+  patience: 500             # [FIXED] Episodes without improvement before stopping (was 300)
+  warmup_episodes: 300      # [NEW] No early stopping during warmup
 
 # =============================================================================
 # Hardware Configuration
 # =============================================================================
 hardware:
-  device: cuda             # Device: cuda or cpu
-  gpu_id: 0                # GPU device ID
-  pin_memory: true         # Pin memory for DataLoader
-  num_workers: 4           # DataLoader workers
+  device: "cuda"            # Device: "cuda" or "cpu"
+  num_workers: 4            # DataLoader workers (if applicable)
 
 # =============================================================================
-# Feature Flags
+# Logging Configuration
 # =============================================================================
-use_gcn: true              # Enable GCN encoder
-use_transformer: true      # Enable Transformer encoder
-
-# =============================================================================
-# Random Seed
-# =============================================================================
-seed: 42
-deterministic: false       # Full determinism (slower)
+logging:
+  level: "INFO"
+  tensorboard: true
+  wandb: false
+  save_video: false

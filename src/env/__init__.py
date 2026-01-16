@@ -1,5 +1,4 @@
-# Environment module
+from .sagin_env import SAGINRoutingEnv, make_sagin_env
 from .network_topology import SAGINTopology, Node, Link, NodeType
-from .sagin_env import SAGINRoutingEnv
 
-__all__ = ['SAGINTopology', 'Node', 'Link', 'NodeType', 'SAGINRoutingEnv']
+__all__ = ['SAGINRoutingEnv', 'make_sagin_env', 'SAGINTopology', 'Node', 'Link', 'NodeType']
