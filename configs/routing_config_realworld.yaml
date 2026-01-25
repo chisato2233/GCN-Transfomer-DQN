@@ -1,0 +1,165 @@
+# SAGIN Intelligent Routing Configuration - Real-World Data
+#
+# 使用真实卫星TLE数据和地面站位置构建的网络拓扑
+#
+# 数据来源:
+# - 卫星: CelesTrak TLE (Starlink/Iridium/OneWeb)
+# - 地面站: ground_stations.json (中国主要城市)
+# - UAV: uav_trajectories.json (模拟巡逻轨迹)
+#
+# =============================================================================
+# Network Topology Configuration [REAL-WORLD]
+# =============================================================================
+network:
+  # 使用真实数据
+  topology_source: "real_world"
+  data_dir: "data"
+
+  # 节点数量
+  num_satellites: 30        # 从Starlink TLE选取
+  num_uavs: 15              # 模拟UAV中继
+  num_ground: 20            # 中国主要城市
+  # 总共 65 个节点
+
+  # 地理区域 (中国)
+  region:
+    lat_range: [20, 50]     # 纬度范围
+    lon_range: [100, 135]   # 经度范围
+
+  # 卫星星座
+  constellation: "starlink"  # starlink, iridium, oneweb
+
+  # 物理参数 (来自真实数据)
+  satellite_altitude: 550000.0    # Starlink典型高度 (550km)
+  uav_altitude_range: [100.0, 500.0]
+
+  # 覆盖参数
+  satellite_coverage: 500000.0    # 500km覆盖半径
+  uav_coverage: 10000.0           # 10km UAV覆盖
+  max_neighbors: 8
+
+  # 链路带宽 (基于实际规格)
+  g2u_bandwidth: 2.0e+7     # 20 MHz Ground-UAV
+  u2u_bandwidth: 1.0e+7     # 10 MHz UAV-UAV
+  u2s_bandwidth: 5.0e+7     # 50 MHz UAV-Satellite
+  s2s_bandwidth: 1.0e+8     # 100 MHz Inter-Satellite Link (ISL)
+
+  # 动态性
+  uav_max_speed: 15.0       # 15 m/s
+  satellite_orbital_period: 5400  # 90分钟轨道周期
+
+# =============================================================================
+# Environment Configuration
+# =============================================================================
+environment:
+  max_hops: 40
+  max_neighbors: 8
+  history_length: 12
+  topology_update_freq: 10
+  link_failure_prob: 0.03   # 3%链路故障率
+
+# =============================================================================
+# Reward Configuration
+# =============================================================================
+reward:
+  success_bonus: 40.0
+  timeout_penalty: 8.0
+
+  delay_weight: 1.5         # 延迟权重 (真实延迟更重要)
+  loss_weight: 12.0
+  congestion_weight: 0.8
+
+  loop_penalty: 3.0
+  invalid_action_penalty: 1.5
+  progress_reward: 0.4
+
+# =============================================================================
+# DQN Agent Configuration
+# =============================================================================
+dqn:
+  lr: 5.0e-5
+  target_update_freq: 150
+  max_grad_norm: 1.0
+  use_double_dqn: true
+  use_dueling: true
+  tau: 0.005
+
+# =============================================================================
+# Exploration Configuration
+# =============================================================================
+exploration:
+  epsilon_start: 1.0
+  epsilon_end: 0.05
+  epsilon_decay: 0.996
+
+# =============================================================================
+# Replay Buffer Configuration
+# =============================================================================
+buffer:
+  capacity: 150000
+  batch_size: 128
+  use_per: false
+
+# =============================================================================
+# GCN Configuration
+# =============================================================================
+gcn:
+  node_feature_dim: 9
+  hidden_dim: 96
+  output_dim: 96
+  max_neighbors: 8
+  num_layers: 2
+  dropout: 0.1
+
+# =============================================================================
+# Transformer Configuration
+# =============================================================================
+transformer:
+  d_model: 96
+  num_heads: 6
+  num_layers: 2
+  d_feedforward: 192
+  dropout: 0.1
+  history_length: 12
+  max_seq_length: 12
+
+# =============================================================================
+# Feature Fusion Configuration
+# =============================================================================
+fusion:
+  method: "gated"
+  output_dim: 192
+  dropout: 0.1
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  num_episodes: 4000
+  max_steps_per_episode: 40
+  gamma: 0.99
+
+  eval_frequency: 80
+  num_eval_episodes: 80
+
+  save_frequency: 400
+  log_frequency: 20
+
+  patience: 1000
+  warmup_episodes: 500
+
+# =============================================================================
+# Hardware Configuration
+# =============================================================================
+hardware:
+  device: "cuda"
+  num_workers: 4
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  level: "INFO"
+  tensorboard: true
+  wandb: false
+  save_video: false

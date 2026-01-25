@@ -11,7 +11,12 @@
       "Bash(dir:*)",
       "Bash(findstr:*)",
       "Bash(tasklist:*)",
-      "Bash(wmic process where \"name like ''%python%''\" get processid,commandline)"
+      "Bash(wmic process where \"name like ''%python%''\" get processid,commandline)",
+      "Bash(taskkill:*)",
+      "Skill(fine-tuning:axolotl)",
+      "Skill(fine-tuning:axolotl:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)"
     ]
   }
 }

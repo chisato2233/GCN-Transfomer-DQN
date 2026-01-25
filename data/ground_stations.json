@@ -1,0 +1,26 @@
+{
+  "description": "Sample ground station locations based on major cities with satellite ground station facilities",
+  "source": "Compiled from public information on Starlink/OneWeb ground stations",
+  "stations": [
+    {"id": "gs_beijing", "name": "Beijing", "lat": 39.9042, "lon": 116.4074, "type": "gateway"},
+    {"id": "gs_shanghai", "name": "Shanghai", "lat": 31.2304, "lon": 121.4737, "type": "gateway"},
+    {"id": "gs_shenzhen", "name": "Shenzhen", "lat": 22.5431, "lon": 114.0579, "type": "gateway"},
+    {"id": "gs_chengdu", "name": "Chengdu", "lat": 30.5728, "lon": 104.0668, "type": "gateway"},
+    {"id": "gs_xian", "name": "Xi'an", "lat": 34.3416, "lon": 108.9398, "type": "gateway"},
+    {"id": "gs_wuhan", "name": "Wuhan", "lat": 30.5928, "lon": 114.3055, "type": "user"},
+    {"id": "gs_guangzhou", "name": "Guangzhou", "lat": 23.1291, "lon": 113.2644, "type": "user"},
+    {"id": "gs_hangzhou", "name": "Hangzhou", "lat": 30.2741, "lon": 120.1551, "type": "user"},
+    {"id": "gs_nanjing", "name": "Nanjing", "lat": 32.0603, "lon": 118.7969, "type": "user"},
+    {"id": "gs_tianjin", "name": "Tianjin", "lat": 39.3434, "lon": 117.3616, "type": "user"},
+    {"id": "gs_chongqing", "name": "Chongqing", "lat": 29.4316, "lon": 106.9123, "type": "user"},
+    {"id": "gs_harbin", "name": "Harbin", "lat": 45.8038, "lon": 126.5350, "type": "user"},
+    {"id": "gs_urumqi", "name": "Urumqi", "lat": 43.8256, "lon": 87.6168, "type": "user"},
+    {"id": "gs_lhasa", "name": "Lhasa", "lat": 29.6500, "lon": 91.1000, "type": "user"},
+    {"id": "gs_kunming", "name": "Kunming", "lat": 24.8801, "lon": 102.8329, "type": "user"},
+    {"id": "gs_newyork", "name": "New York", "lat": 40.7128, "lon": -74.0060, "type": "gateway"},
+    {"id": "gs_losangeles", "name": "Los Angeles", "lat": 34.0522, "lon": -118.2437, "type": "gateway"},
+    {"id": "gs_london", "name": "London", "lat": 51.5074, "lon": -0.1278, "type": "gateway"},
+    {"id": "gs_tokyo", "name": "Tokyo", "lat": 35.6762, "lon": 139.6503, "type": "gateway"},
+    {"id": "gs_sydney", "name": "Sydney", "lat": -33.8688, "lon": 151.2093, "type": "gateway"}
+  ]
+}

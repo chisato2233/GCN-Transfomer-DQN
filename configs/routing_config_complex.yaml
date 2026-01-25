@@ -1,0 +1,159 @@
+# SAGIN Intelligent Routing Configuration - Complex Topology
+#
+# 设计目标：创建一个 Greedy 表现不好的场景，突出 GCN-Transformer 的优势
+#
+# Greedy 失败的场景：
+# 1. 死胡同：距离近但连通性差的节点
+# 2. 链路故障：需要学习备选路径
+# 3. 异构代价：距离近但延迟高的链路
+# 4. 大规模网络：更多节点，更多选择
+#
+# =============================================================================
+# Network Topology Configuration [COMPLEX]
+# =============================================================================
+network:
+  # 更大规模的网络
+  num_satellites: 6         # 增加卫星数量 (原3)
+  num_uavs: 15             # 增加UAV数量 (原6)
+  num_ground: 25           # 增加地面节点 (原10)
+  # 总共 46 个节点 (原19)
+
+  # 更大的空间范围 - 增加路径多样性
+  area_size: 20000.0           # 翻倍 (原10000)
+  satellite_altitude: 550000.0
+  uav_altitude_range: [100.0, 800.0]  # 更大范围
+
+  # 更小的覆盖范围 - 创造更稀疏的连接，增加死胡同
+  satellite_coverage: 400000.0  # 减小 (原500000)
+  uav_coverage: 3000.0          # 减小 (原5000) - 创造更多断开区域
+  max_neighbors: 6              # 减少最大邻居数 (原8) - 增加选择难度
+
+  # 异构带宽 - 使得距离不再是唯一考量
+  g2u_bandwidth: 1.0e+7    # 降低 Ground-UAV 带宽
+  u2u_bandwidth: 5.0e+6    # 降低 UAV-UAV 带宽
+  u2s_bandwidth: 8.0e+7    # 提高 UAV-Satellite 带宽
+  s2s_bandwidth: 2.0e+8    # 提高 Satellite-Satellite 带宽
+  # 效果：卫星链路更优，但距离可能更远
+
+  # 动态性
+  uav_max_speed: 20.0      # 更快移动 (原10)
+  satellite_orbital_period: 3600  # 更快轨道周期 (原5400)
+
+# =============================================================================
+# Environment Configuration [COMPLEX]
+# =============================================================================
+environment:
+  max_hops: 50              # 增加最大跳数 (原30)
+  max_neighbors: 6          # 与network一致
+  history_length: 15        # 增加历史长度 (原10) - Transformer更有用
+  topology_update_freq: 5   # 更频繁的拓扑更新 (原10)
+  link_failure_prob: 0.08   # 更高的链路故障率 (原0.02) - 关键改变！
+
+# =============================================================================
+# Reward Configuration [COMPLEX]
+# =============================================================================
+reward:
+  success_bonus: 50.0       # 更高的成功奖励
+  timeout_penalty: 10.0     # 更高的超时惩罚
+
+  # 强调延迟和带宽
+  delay_weight: 2.0         # 增加延迟惩罚权重 (原1.0)
+  loss_weight: 15.0         # 增加丢包惩罚
+  congestion_weight: 1.0    # 增加拥塞惩罚
+
+  # 循环惩罚
+  loop_penalty: 5.0         # 更强的循环惩罚 (原2.0)
+  invalid_action_penalty: 2.0
+
+  progress_reward: 0.3      # 降低距离进步奖励 - 减少Greedy偏向
+
+# =============================================================================
+# DQN Agent Configuration
+# =============================================================================
+dqn:
+  lr: 3.0e-5                # 更小的学习率 (更复杂环境需要更稳定)
+  target_update_freq: 200   # 更慢的目标网络更新
+  max_grad_norm: 0.5        # 更激进的梯度裁剪
+  use_double_dqn: true
+  use_dueling: true
+  tau: 0.001                # 更慢的软更新
+
+# =============================================================================
+# Exploration Configuration
+# =============================================================================
+exploration:
+  epsilon_start: 1.0
+  epsilon_end: 0.1          # 更高的最终探索率 (复杂环境需要更多探索)
+  epsilon_decay: 0.998      # 更慢的衰减
+
+# =============================================================================
+# Replay Buffer Configuration
+# =============================================================================
+buffer:
+  capacity: 200000          # 更大的缓冲区
+  batch_size: 256           # 更大的批次
+  use_per: false
+
+# =============================================================================
+# GCN Configuration
+# =============================================================================
+gcn:
+  node_feature_dim: 9
+  hidden_dim: 128           # 增加隐藏层维度
+  output_dim: 128
+  max_neighbors: 6
+  num_layers: 3             # 增加GCN层数 (更深的感受野)
+  dropout: 0.15
+
+# =============================================================================
+# Transformer Configuration
+# =============================================================================
+transformer:
+  d_model: 128              # 增加模型维度
+  num_heads: 8              # 增加注意力头
+  num_layers: 3             # 增加层数
+  d_feedforward: 256
+  dropout: 0.15
+  history_length: 15        # 更长的历史
+  max_seq_length: 15
+
+# =============================================================================
+# Feature Fusion Configuration
+# =============================================================================
+fusion:
+  method: "gated"
+  output_dim: 256           # 更大的融合维度
+  dropout: 0.15
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  num_episodes: 5000        # 更多训练轮次
+  max_steps_per_episode: 50
+  gamma: 0.99
+
+  eval_frequency: 100       # 更少的评估频率
+  num_eval_episodes: 100    # 更多评估轮次 (复杂环境方差大)
+
+  save_frequency: 500
+  log_frequency: 20
+
+  patience: 1500            # 更长的耐心
+  warmup_episodes: 800      # 更长的预热期
+
+# =============================================================================
+# Hardware Configuration
+# =============================================================================
+hardware:
+  device: "cuda"
+  num_workers: 4
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  level: "INFO"
+  tensorboard: true
+  wandb: false
+  save_video: false

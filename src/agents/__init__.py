@@ -1,3 +1,3 @@
-from .dqn_gcn_transformer import DQNGCNTransformerAgent
+from .dqn_gcn_transformer_v3 import DQNGCNTransformerAgentV3
 
-__all__ = ['DQNGCNTransformerAgent']
+__all__ = ['DQNGCNTransformerAgentV3']

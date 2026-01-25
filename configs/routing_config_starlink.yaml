@@ -1,0 +1,161 @@
+# SAGIN Intelligent Routing Configuration - Starlink Large Scale
+#
+# 基于真实 Starlink 星座数据的大规模复杂网络
+# Starlink: 9419颗卫星, 504km轨道高度, 53°倾角
+#
+# 设计目标: 创建一个真正复杂的网络，充分利用真实卫星数据
+#
+# =============================================================================
+# Network Topology Configuration [STARLINK LARGE SCALE]
+# =============================================================================
+network:
+  # 数据源配置
+  topology_source: "real_world"
+  data_dir: "data"
+  constellation: "starlink"
+
+  # 节点配置 (基于区域内可用卫星位置)
+  num_satellites: 40        # Starlink 卫星 (区域内时变，约30-50颗)
+  num_uavs: 25              # UAV 中继
+  num_ground: 15            # 地面站 (中国主要城市)
+  # 总共 ~80 个节点
+
+  # 覆盖区域: 东亚-太平洋
+  region:
+    lat_range: [10, 60]     # 从东南亚到俄罗斯
+    lon_range: [90, 150]    # 从中国西部到日本
+
+  # Starlink 物理参数 (真实规格)
+  satellite_altitude: 550000.0    # 550km (Starlink Gen1)
+  uav_altitude_range: [100.0, 1000.0]  # 更大高度范围
+
+  # 覆盖参数 (基于 Starlink 实际覆盖)
+  satellite_coverage: 940000.0    # ~940km 覆盖半径 (45°仰角)
+  uav_coverage: 15000.0           # 15km UAV 覆盖
+  max_neighbors: 12               # 更多邻居连接
+
+  # Starlink 链路带宽 (基于公开规格)
+  g2u_bandwidth: 2.0e+7     # 20 MHz Ground-UAV
+  u2u_bandwidth: 1.0e+7     # 10 MHz UAV-UAV
+  u2s_bandwidth: 1.0e+8     # 100 MHz User-Satellite (Starlink)
+  s2s_bandwidth: 5.0e+9     # 5 GHz Inter-Satellite Link (激光ISL)
+
+  # 动态性
+  uav_max_speed: 20.0       # 20 m/s
+  satellite_orbital_period: 5400  # 90分钟 (Starlink典型)
+
+# =============================================================================
+# Environment Configuration [COMPLEX]
+# =============================================================================
+environment:
+  max_hops: 60              # 大网络需要更多跳数
+  max_neighbors: 12
+  history_length: 15        # 更长历史
+  topology_update_freq: 8   # 更频繁更新 (卫星移动快)
+  link_failure_prob: 0.05   # 5% 链路故障
+
+# =============================================================================
+# Reward Configuration
+# =============================================================================
+reward:
+  success_bonus: 60.0       # 更高成功奖励 (大网络更难)
+  timeout_penalty: 15.0     # 更高超时惩罚
+
+  delay_weight: 2.0         # 延迟更重要
+  loss_weight: 15.0
+  congestion_weight: 1.0
+
+  loop_penalty: 4.0         # 大网络更容易循环
+  invalid_action_penalty: 2.0
+  progress_reward: 0.3      # 降低贪心倾向
+
+# =============================================================================
+# DQN Agent Configuration
+# =============================================================================
+dqn:
+  lr: 3.0e-5                # 更小学习率 (大网络需要稳定)
+  target_update_freq: 200
+  max_grad_norm: 0.5
+  use_double_dqn: true
+  use_dueling: true
+  tau: 0.002
+
+# =============================================================================
+# Exploration Configuration
+# =============================================================================
+exploration:
+  epsilon_start: 1.0
+  epsilon_end: 0.08         # 保持一定探索
+  epsilon_decay: 0.997      # 慢衰减
+
+# =============================================================================
+# Replay Buffer Configuration
+# =============================================================================
+buffer:
+  capacity: 300000          # 大缓冲区
+  batch_size: 256           # 大批次
+  use_per: false
+
+# =============================================================================
+# GCN Configuration [LARGER]
+# =============================================================================
+gcn:
+  node_feature_dim: 9
+  hidden_dim: 128           # 更大隐藏层
+  output_dim: 128
+  max_neighbors: 12
+  num_layers: 3             # 更深网络
+  dropout: 0.15
+
+# =============================================================================
+# Transformer Configuration [LARGER]
+# =============================================================================
+transformer:
+  d_model: 128
+  num_heads: 8
+  num_layers: 3
+  d_feedforward: 256
+  dropout: 0.15
+  history_length: 15
+  max_seq_length: 15
+
+# =============================================================================
+# Feature Fusion Configuration
+# =============================================================================
+fusion:
+  method: "gated"
+  output_dim: 256
+  dropout: 0.15
+
+# =============================================================================
+# Training Configuration
+# =============================================================================
+training:
+  num_episodes: 8000        # 更多训练轮次
+  max_steps_per_episode: 60
+  gamma: 0.99
+
+  eval_frequency: 100
+  num_eval_episodes: 100
+
+  save_frequency: 500
+  log_frequency: 25
+
+  patience: 2000            # 更长耐心
+  warmup_episodes: 1000     # 更长预热
+
+# =============================================================================
+# Hardware Configuration
+# =============================================================================
+hardware:
+  device: "cuda"
+  num_workers: 4
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+logging:
+  level: "INFO"
+  tensorboard: true
+  wandb: false
+  save_video: false

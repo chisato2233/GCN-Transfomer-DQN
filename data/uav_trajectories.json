@@ -1,0 +1,77 @@
+{
+  "description": "Simulated UAV trajectories for relay network coverage",
+  "source": "Generated based on typical UAV patrol patterns (inspired by pNEUMA and Mid-Air datasets)",
+  "parameters": {
+    "altitude_range_m": [100, 500],
+    "speed_range_ms": [5, 20],
+    "battery_capacity_wh": 500,
+    "power_consumption_w": 150
+  },
+  "trajectories": [
+    {
+      "id": "uav_patrol_01",
+      "type": "patrol",
+      "region": "urban_beijing",
+      "center_lat": 39.9042,
+      "center_lon": 116.4074,
+      "radius_km": 10,
+      "altitude_m": 200,
+      "waypoints": [
+        {"lat": 39.95, "lon": 116.35, "alt": 200, "time_s": 0},
+        {"lat": 39.90, "lon": 116.45, "alt": 220, "time_s": 300},
+        {"lat": 39.85, "lon": 116.40, "alt": 180, "time_s": 600},
+        {"lat": 39.92, "lon": 116.38, "alt": 200, "time_s": 900}
+      ]
+    },
+    {
+      "id": "uav_patrol_02",
+      "type": "patrol",
+      "region": "urban_shanghai",
+      "center_lat": 31.2304,
+      "center_lon": 121.4737,
+      "radius_km": 8,
+      "altitude_m": 250,
+      "waypoints": [
+        {"lat": 31.28, "lon": 121.42, "alt": 250, "time_s": 0},
+        {"lat": 31.22, "lon": 121.50, "alt": 230, "time_s": 350},
+        {"lat": 31.18, "lon": 121.45, "alt": 260, "time_s": 700},
+        {"lat": 31.25, "lon": 121.48, "alt": 250, "time_s": 1050}
+      ]
+    },
+    {
+      "id": "uav_relay_03",
+      "type": "relay",
+      "region": "rural_coverage",
+      "center_lat": 35.0,
+      "center_lon": 110.0,
+      "radius_km": 50,
+      "altitude_m": 400,
+      "waypoints": [
+        {"lat": 35.2, "lon": 109.8, "alt": 400, "time_s": 0},
+        {"lat": 34.8, "lon": 110.2, "alt": 380, "time_s": 600},
+        {"lat": 35.0, "lon": 110.4, "alt": 420, "time_s": 1200},
+        {"lat": 35.1, "lon": 109.9, "alt": 400, "time_s": 1800}
+      ]
+    },
+    {
+      "id": "uav_emergency_04",
+      "type": "emergency",
+      "region": "disaster_response",
+      "center_lat": 30.0,
+      "center_lon": 105.0,
+      "radius_km": 20,
+      "altitude_m": 300,
+      "waypoints": [
+        {"lat": 30.1, "lon": 104.9, "alt": 300, "time_s": 0},
+        {"lat": 29.95, "lon": 105.1, "alt": 280, "time_s": 200},
+        {"lat": 30.0, "lon": 105.0, "alt": 320, "time_s": 400}
+      ]
+    }
+  ],
+  "fleet_config": {
+    "num_uavs_per_region": 6,
+    "coverage_overlap": 0.3,
+    "handoff_threshold_km": 2.0,
+    "min_battery_percent": 20
+  }
+}

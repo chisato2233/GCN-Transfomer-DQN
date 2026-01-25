@@ -1,0 +1,7 @@
+{
+  "enabledPlugins": {
+    "mechanistic-interpretability@ai-research-skills": true,
+    "fine-tuning@ai-research-skills": true,
+    "model-architecture@ai-research-skills": true
+  }
+}

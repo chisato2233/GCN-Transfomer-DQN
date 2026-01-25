@@ -72,20 +72,21 @@ dqn:
   tau: 0.005                # [NEW] Soft update coefficient (was 0.001)
 
 # =============================================================================
-# Exploration Configuration [FIXED]
+# Exploration Configuration [FIXED V3 - Stable Training]
 # =============================================================================
 exploration:
   epsilon_start: 1.0
   epsilon_end: 0.05         # Minimum exploration rate
-  epsilon_decay: 0.995      # [FIXED] Faster decay (was 0.998)
-  # At 500 episodes: 0.995^500 ≈ 0.082 (vs 0.998^500 ≈ 0.368)
+  epsilon_decay: 0.995      # [V3] Restored faster decay for stability
+  # At 500 episodes: 0.995^500 ≈ 0.08 (quick exploitation)
+  # At 300 episodes: 0.995^300 ≈ 0.22 (balanced exploration)
 
 # =============================================================================
-# Replay Buffer Configuration
+# Replay Buffer Configuration [V3 - Larger batch for stability]
 # =============================================================================
 buffer:
   capacity: 100000          # Replay buffer size
-  batch_size: 64            # Training batch size
+  batch_size: 128           # [V3] Larger batch for stable gradients (was 64)
   use_per: false            # Prioritized Experience Replay
   per_alpha: 0.6            # PER alpha
   per_beta_start: 0.4       # PER beta start
@@ -138,9 +139,9 @@ training:
   save_frequency: 200       # Save checkpoint every N episodes
   log_frequency: 10         # Log every N episodes
   
-  # Early stopping [FIXED]
-  patience: 500             # [FIXED] Episodes without improvement before stopping (was 300)
-  warmup_episodes: 300      # [NEW] No early stopping during warmup
+  # Early stopping [FIXED V2]
+  patience: 800             # [V2] More patience for recovery (was 500)
+  warmup_episodes: 400      # [V2] Longer warmup, no early stopping during this period
 
 # =============================================================================
 # Hardware Configuration

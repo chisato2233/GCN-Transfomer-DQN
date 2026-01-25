@@ -1,0 +1,56 @@
+AODV:
+  avg_delay: 1.2331691962485933
+  avg_hops: 3.625
+  avg_reward: 52.25611884410276
+  path_efficiency: 1.0845098778772249
+  std_reward: 36.06224483118419
+  success_rate: 98.0
+ECMP:
+  avg_delay: 1.1867680945349268
+  avg_hops: 4.13
+  avg_reward: 54.082057250985414
+  path_efficiency: 0.9983079526226736
+  std_reward: 31.362062882242704
+  success_rate: 98.5
+Greedy:
+  avg_delay: 1.503933392860955
+  avg_hops: 5.085
+  avg_reward: 35.05645585201505
+  path_efficiency: 0.9540822240822241
+  std_reward: 80.27819787610692
+  success_rate: 92.5
+OSPF:
+  avg_delay: 1.3694264841323085
+  avg_hops: 5.075
+  avg_reward: 42.33200906034096
+  path_efficiency: 1.0072807017543859
+  std_reward: 67.35750595593434
+  success_rate: 95.0
+PQ-Routing:
+  avg_delay: 10.977218185566294
+  avg_hops: 34.085
+  avg_reward: -215.65731260318378
+  path_efficiency: 0.9657131011608624
+  std_reward: 194.4602499327422
+  success_rate: 33.5
+Q-Routing:
+  avg_delay: 6.525387813184368
+  avg_hops: 21.595
+  avg_reward: -122.71908286132224
+  path_efficiency: 1.0390153233010375
+  std_reward: 198.1130251993168
+  success_rate: 52.5
+Random:
+  avg_delay: 7.632165300528296
+  avg_hops: 24.555
+  avg_reward: -91.712369404171
+  path_efficiency: 0.48191409364396476
+  std_reward: 160.12971411403973
+  success_rate: 64.0
+V3 Per-Neighbor:
+  avg_delay: 1.1567844045757376
+  avg_hops: 3.68
+  avg_reward: 45.38955128004546
+  path_efficiency: 1.074046372475692
+  std_reward: 58.36057491454238
+  success_rate: 95.5
