@@ -17,6 +17,12 @@ References:
    - "Dueling DQN Routing in SDN" (Wireless Networks 2024)
 
 这些是2024-2025年SAGIN/GNN路由领域的主流方法。
+
+SAGIN-Compatible Version:
+- 适配 SAGIN 环境的 observation 格式
+- 使用 neighbor_topology_features [max_neighbors, 14]
+- 使用 neighbor_mask [max_neighbors]
+- 使用 action_mask [max_neighbors]
 """
 
 import torch
@@ -27,6 +33,96 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple
 from collections import deque
 import random
+
+
+# ============================================================
+# SAGIN-Compatible Replay Buffer
+# ============================================================
+
+class GNNReplayBuffer:
+    """Replay buffer for GNN-based agents in SAGIN environment."""
+
+    def __init__(self,
+                 capacity: int,
+                 feature_dim: int,
+                 max_neighbors: int,
+                 device: str = 'cuda'):
+        self.capacity = capacity
+        self.device = device
+        self.position = 0
+        self.size = 0
+
+        # Allocate buffers
+        self.neighbor_features = np.zeros(
+            (capacity, max_neighbors, feature_dim), dtype=np.float32
+        )
+        self.neighbor_masks = np.zeros((capacity, max_neighbors), dtype=np.float32)
+        self.actions = np.zeros(capacity, dtype=np.int64)
+        self.rewards = np.zeros(capacity, dtype=np.float32)
+        self.next_neighbor_features = np.zeros(
+            (capacity, max_neighbors, feature_dim), dtype=np.float32
+        )
+        self.next_neighbor_masks = np.zeros((capacity, max_neighbors), dtype=np.float32)
+        self.dones = np.zeros(capacity, dtype=np.float32)
+        self.action_masks = np.zeros((capacity, max_neighbors), dtype=np.float32)
+        self.next_action_masks = np.zeros((capacity, max_neighbors), dtype=np.float32)
+
+    def push(self, neighbor_features, neighbor_mask, action, reward,
+             next_neighbor_features, next_neighbor_mask, done,
+             action_mask, next_action_mask):
+        idx = self.position
+
+        self.neighbor_features[idx] = neighbor_features
+        self.neighbor_masks[idx] = neighbor_mask
+        self.actions[idx] = action
+        self.rewards[idx] = reward
+        self.next_neighbor_features[idx] = next_neighbor_features
+        self.next_neighbor_masks[idx] = next_neighbor_mask
+        self.dones[idx] = float(done)
+        self.action_masks[idx] = action_mask
+        self.next_action_masks[idx] = next_action_mask
+
+        self.position = (self.position + 1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
+
+    def sample(self, batch_size: int) -> Dict[str, torch.Tensor]:
+        indices = np.random.randint(0, self.size, size=batch_size)
+
+        return {
+            'neighbor_features': torch.tensor(
+                self.neighbor_features[indices], device=self.device
+            ),
+            'neighbor_masks': torch.tensor(
+                self.neighbor_masks[indices], device=self.device
+            ),
+            'actions': torch.tensor(
+                self.actions[indices], device=self.device
+            ).unsqueeze(1),
+            'rewards': torch.tensor(
+                self.rewards[indices], device=self.device
+            ).unsqueeze(1),
+            'next_neighbor_features': torch.tensor(
+                self.next_neighbor_features[indices], device=self.device
+            ),
+            'next_neighbor_masks': torch.tensor(
+                self.next_neighbor_masks[indices], device=self.device
+            ),
+            'dones': torch.tensor(
+                self.dones[indices], device=self.device
+            ).unsqueeze(1),
+            'action_masks': torch.tensor(
+                self.action_masks[indices], device=self.device
+            ),
+            'next_action_masks': torch.tensor(
+                self.next_action_masks[indices], device=self.device
+            ),
+        }
+
+    def is_ready(self, batch_size: int) -> bool:
+        return self.size >= batch_size
+
+    def __len__(self) -> int:
+        return self.size
 
 
 # ============================================================
@@ -503,3 +599,576 @@ class GCNDQNNetwork(nn.Module):
 
         combined = torch.cat([current_embedding, global_embedding], dim=-1)
         return self.q_head(combined)
+
+
+# ============================================================
+# SAGIN-Compatible GNN Agents
+# ============================================================
+# 以下是适配 SAGIN 环境的 GNN Agent 实现
+# 使用 per-neighbor 特征格式，与 V3 Agent 观测格式兼容
+
+class SAGINGATNetwork(nn.Module):
+    """
+    GAT Network for SAGIN environment.
+
+    使用邻居特征构建局部图，应用 Graph Attention。
+    关键区别：使用 neighbor_features 而非全局 node_features。
+    """
+
+    def __init__(self, config: dict):
+        super().__init__()
+
+        self.feature_dim = config.get('feature_dim', 14)
+        self.hidden_dim = config.get('hidden_dim', 64)
+        self.max_neighbors = config.get('max_neighbors', 8)
+        self.n_heads = config.get('n_heads', 4)
+
+        # Feature encoder
+        self.feature_encoder = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Self-attention over neighbors (GAT-style)
+        self.attention = nn.MultiheadAttention(
+            embed_dim=self.hidden_dim,
+            num_heads=self.n_heads,
+            dropout=0.1,
+            batch_first=True
+        )
+
+        # Global context aggregation
+        self.global_fc = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Per-neighbor Q-value head
+        self.q_head = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, 1)
+        )
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, neighbor_features: torch.Tensor,
+                neighbor_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            neighbor_features: [batch, max_neighbors, feature_dim]
+            neighbor_mask: [batch, max_neighbors]
+
+        Returns:
+            Q-values: [batch, max_neighbors]
+        """
+        batch_size = neighbor_features.size(0)
+
+        # Encode neighbor features
+        h = self.feature_encoder(neighbor_features)  # [batch, max_neighbors, hidden_dim]
+
+        # Create attention mask (True = masked)
+        attn_mask = (neighbor_mask == 0)
+
+        # Apply self-attention (GAT-style)
+        # Query: each neighbor, Key/Value: all neighbors
+        h_attn, _ = self.attention(
+            h, h, h,
+            key_padding_mask=attn_mask
+        )
+
+        # Residual connection
+        h = h + h_attn
+
+        # Global context (mean-pooling over valid neighbors)
+        masked_h = h * neighbor_mask.unsqueeze(-1)
+        global_ctx = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+        global_ctx = self.global_fc(global_ctx)  # [batch, hidden_dim]
+
+        # Expand global context to each neighbor
+        global_ctx_expanded = global_ctx.unsqueeze(1).expand(-1, self.max_neighbors, -1)
+
+        # Concatenate and compute Q-values for each neighbor
+        combined = torch.cat([h, global_ctx_expanded], dim=-1)
+        q_values = self.q_head(combined).squeeze(-1)  # [batch, max_neighbors]
+
+        return q_values
+
+
+class SAGINGraphSAGENetwork(nn.Module):
+    """
+    GraphSAGE Network for SAGIN environment.
+
+    使用 mean aggregation 聚合邻居特征。
+    """
+
+    def __init__(self, config: dict):
+        super().__init__()
+
+        self.feature_dim = config.get('feature_dim', 14)
+        self.hidden_dim = config.get('hidden_dim', 64)
+        self.max_neighbors = config.get('max_neighbors', 8)
+
+        # Feature encoder (self transformation)
+        self.self_encoder = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Neighbor aggregation (SAGE-style mean)
+        self.neigh_encoder = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Combine self and neighbor representations
+        self.combine = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Per-neighbor Q-value head
+        self.q_head = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, 1)
+        )
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, neighbor_features: torch.Tensor,
+                neighbor_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            neighbor_features: [batch, max_neighbors, feature_dim]
+            neighbor_mask: [batch, max_neighbors]
+
+        Returns:
+            Q-values: [batch, max_neighbors]
+        """
+        # Encode each neighbor's features (self representation)
+        h_self = self.self_encoder(neighbor_features)  # [batch, max_neighbors, hidden_dim]
+
+        # Mean aggregation over all valid neighbors (neighbor representation)
+        h_neigh_encoded = self.neigh_encoder(neighbor_features)
+        masked_h = h_neigh_encoded * neighbor_mask.unsqueeze(-1)
+        h_agg = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+        # [batch, hidden_dim]
+
+        # Expand aggregated features to each neighbor position
+        h_agg_expanded = h_agg.unsqueeze(1).expand(-1, self.max_neighbors, -1)
+
+        # Combine (SAGE: concat self + aggregated neighbors)
+        h_combined = torch.cat([h_self, h_agg_expanded], dim=-1)
+        h = self.combine(h_combined)  # [batch, max_neighbors, hidden_dim]
+
+        # Global context
+        masked_h = h * neighbor_mask.unsqueeze(-1)
+        global_ctx = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+        global_ctx_expanded = global_ctx.unsqueeze(1).expand(-1, self.max_neighbors, -1)
+
+        # Q-values
+        q_input = torch.cat([h, global_ctx_expanded], dim=-1)
+        q_values = self.q_head(q_input).squeeze(-1)
+
+        return q_values
+
+
+class SAGINGCNNetwork(nn.Module):
+    """
+    GCN Network for SAGIN environment.
+
+    标准 GCN 变体，使用邻居特征构建局部图。
+    """
+
+    def __init__(self, config: dict):
+        super().__init__()
+
+        self.feature_dim = config.get('feature_dim', 14)
+        self.hidden_dim = config.get('hidden_dim', 64)
+        self.max_neighbors = config.get('max_neighbors', 8)
+
+        # GCN-style feature transformation
+        self.gcn1 = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        self.gcn2 = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Per-neighbor Q-value head
+        self.q_head = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, 1)
+        )
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, neighbor_features: torch.Tensor,
+                neighbor_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            neighbor_features: [batch, max_neighbors, feature_dim]
+            neighbor_mask: [batch, max_neighbors]
+
+        Returns:
+            Q-values: [batch, max_neighbors]
+        """
+        # First GCN layer (transform features)
+        h = self.gcn1(neighbor_features)  # [batch, max_neighbors, hidden_dim]
+
+        # Aggregation (GCN-style: mean of neighbors including self)
+        masked_h = h * neighbor_mask.unsqueeze(-1)
+        h_agg = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+        h_agg_expanded = h_agg.unsqueeze(1).expand(-1, self.max_neighbors, -1)
+
+        # Combine with aggregated (GCN message passing approximation)
+        h = h + h_agg_expanded * 0.5
+
+        # Second GCN layer
+        h = self.gcn2(h)
+
+        # Global context
+        masked_h = h * neighbor_mask.unsqueeze(-1)
+        global_ctx = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+        global_ctx_expanded = global_ctx.unsqueeze(1).expand(-1, self.max_neighbors, -1)
+
+        # Q-values
+        q_input = torch.cat([h, global_ctx_expanded], dim=-1)
+        q_values = self.q_head(q_input).squeeze(-1)
+
+        return q_values
+
+
+class SAGINDuelingNetwork(nn.Module):
+    """
+    Dueling DQN Network for SAGIN environment (No GNN).
+
+    直接处理邻居特征，使用 Dueling 架构。
+    """
+
+    def __init__(self, config: dict):
+        super().__init__()
+
+        self.feature_dim = config.get('feature_dim', 14)
+        self.hidden_dim = config.get('hidden_dim', 64)
+        self.max_neighbors = config.get('max_neighbors', 8)
+
+        # Feature encoder for each neighbor
+        self.feature_encoder = nn.Sequential(
+            nn.Linear(self.feature_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.ReLU()
+        )
+
+        # Value stream (from global context)
+        self.value_stream = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim // 2, 1)
+        )
+
+        # Advantage stream (per neighbor)
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(self.hidden_dim, self.hidden_dim // 2),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim // 2, 1)
+        )
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.xavier_uniform_(module.weight, gain=0.5)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+
+    def forward(self, neighbor_features: torch.Tensor,
+                neighbor_mask: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            neighbor_features: [batch, max_neighbors, feature_dim]
+            neighbor_mask: [batch, max_neighbors]
+
+        Returns:
+            Q-values: [batch, max_neighbors]
+        """
+        # Encode each neighbor
+        h = self.feature_encoder(neighbor_features)  # [batch, max_neighbors, hidden_dim]
+
+        # Global context for value
+        masked_h = h * neighbor_mask.unsqueeze(-1)
+        global_ctx = masked_h.sum(dim=1) / (neighbor_mask.sum(dim=1, keepdim=True) + 1e-8)
+
+        # Value (state value)
+        value = self.value_stream(global_ctx)  # [batch, 1]
+
+        # Advantage (per action/neighbor)
+        advantages = self.advantage_stream(h).squeeze(-1)  # [batch, max_neighbors]
+
+        # Combine: Q = V + (A - mean(A))
+        masked_advantages = advantages.masked_fill(neighbor_mask == 0, 0.0)
+        adv_mean = masked_advantages.sum(dim=1, keepdim=True) / (
+            neighbor_mask.sum(dim=1, keepdim=True) + 1e-8
+        )
+
+        q_values = value + (advantages - adv_mean)
+
+        return q_values
+
+
+class SAGINGNNAgent:
+    """
+    Base GNN Agent for SAGIN environment.
+
+    支持 GAT, GraphSAGE, GCN, Dueling 等变体。
+    """
+
+    NETWORK_CLASSES = {
+        'gat': SAGINGATNetwork,
+        'graphsage': SAGINGraphSAGENetwork,
+        'gcn': SAGINGCNNetwork,
+        'dueling': SAGINDuelingNetwork,
+    }
+
+    def __init__(self, config: dict, network_type: str = 'gat'):
+        self.config = config
+        self.device = config.get('device', 'cuda')
+        if self.device == 'cuda' and not torch.cuda.is_available():
+            self.device = 'cpu'
+
+        self.network_type = network_type
+        self.max_neighbors = config.get('max_neighbors', 8)
+        self.feature_dim = config.get('feature_dim', 14)
+
+        # Build networks
+        NetworkClass = self.NETWORK_CLASSES[network_type]
+        self.q_network = NetworkClass(config).to(self.device)
+        self.target_network = NetworkClass(config).to(self.device)
+        self.target_network.load_state_dict(self.q_network.state_dict())
+        self.target_network.eval()
+
+        # Optimizer
+        lr = config.get('lr', 1e-4)
+        self.optimizer = optim.AdamW(
+            self.q_network.parameters(),
+            lr=lr,
+            weight_decay=1e-5
+        )
+
+        # Replay buffer
+        buffer_capacity = config.get('buffer_capacity', 100000)
+        self.replay_buffer = GNNReplayBuffer(
+            capacity=buffer_capacity,
+            feature_dim=self.feature_dim,
+            max_neighbors=self.max_neighbors,
+            device=self.device
+        )
+
+        # DQN parameters
+        self.gamma = config.get('gamma', 0.99)
+        self.tau = config.get('tau', 0.005)
+        self.batch_size = config.get('batch_size', 128)
+        self.max_grad_norm = config.get('max_grad_norm', 1.0)
+
+        # Exploration
+        self.epsilon = config.get('epsilon_start', 1.0)
+        self.epsilon_end = config.get('epsilon_end', 0.05)
+        self.epsilon_decay = config.get('epsilon_decay', 0.995)
+
+        # Training state
+        self.train_step = 0
+        self.episode_count = 0
+
+    def select_action(self,
+                      neighbor_features: np.ndarray,
+                      neighbor_mask: np.ndarray,
+                      action_mask: np.ndarray,
+                      training: bool = True) -> int:
+        """Select action using epsilon-greedy policy."""
+        # Epsilon-greedy exploration
+        if training and np.random.random() < self.epsilon:
+            valid_actions = np.where(action_mask > 0)[0]
+            if len(valid_actions) > 0:
+                return int(np.random.choice(valid_actions))
+            return 0
+
+        # Greedy action selection
+        with torch.no_grad():
+            feat_t = torch.tensor(
+                neighbor_features, dtype=torch.float32, device=self.device
+            ).unsqueeze(0)
+            mask_t = torch.tensor(
+                neighbor_mask, dtype=torch.float32, device=self.device
+            ).unsqueeze(0)
+
+            q_values = self.q_network(feat_t, mask_t).squeeze(0)
+
+            # Mask invalid actions
+            action_mask_t = torch.tensor(
+                action_mask, dtype=torch.float32, device=self.device
+            )
+            q_values = q_values.masked_fill(action_mask_t == 0, float('-inf'))
+
+            return int(q_values.argmax().item())
+
+    def store_transition(self,
+                         neighbor_features: np.ndarray,
+                         neighbor_mask: np.ndarray,
+                         action: int,
+                         reward: float,
+                         next_neighbor_features: np.ndarray,
+                         next_neighbor_mask: np.ndarray,
+                         done: bool,
+                         action_mask: np.ndarray,
+                         next_action_mask: np.ndarray):
+        """Store transition in replay buffer."""
+        self.replay_buffer.push(
+            neighbor_features, neighbor_mask, action, reward,
+            next_neighbor_features, next_neighbor_mask, done,
+            action_mask, next_action_mask
+        )
+
+    def train(self) -> Dict[str, float]:
+        """Perform one training step."""
+        if not self.replay_buffer.is_ready(self.batch_size):
+            return {'loss': 0.0, 'q_value': 0.0}
+
+        batch = self.replay_buffer.sample(self.batch_size)
+
+        # Current Q-values
+        current_q = self.q_network(
+            batch['neighbor_features'],
+            batch['neighbor_masks']
+        )
+        current_q = current_q.gather(1, batch['actions'])
+
+        # Target Q-values (Double DQN)
+        with torch.no_grad():
+            # Online network selects action
+            next_q_online = self.q_network(
+                batch['next_neighbor_features'],
+                batch['next_neighbor_masks']
+            )
+            next_q_online = next_q_online.masked_fill(
+                batch['next_action_masks'] == 0, -1e8
+            )
+            next_actions = next_q_online.argmax(dim=1, keepdim=True)
+
+            # Target network evaluates
+            next_q_target = self.target_network(
+                batch['next_neighbor_features'],
+                batch['next_neighbor_masks']
+            )
+            next_q = next_q_target.gather(1, next_actions)
+
+            target_q = batch['rewards'] + self.gamma * next_q * (1 - batch['dones'])
+
+        # Compute loss
+        loss = F.smooth_l1_loss(current_q, target_q)
+
+        # Optimize
+        self.optimizer.zero_grad()
+        loss.backward()
+
+        if self.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), self.max_grad_norm)
+
+        self.optimizer.step()
+
+        # Soft update target network
+        self.train_step += 1
+        self._soft_update()
+
+        return {
+            'loss': loss.item(),
+            'q_value': current_q.mean().item(),
+            'target_q': target_q.mean().item()
+        }
+
+    def _soft_update(self):
+        """Soft update target network."""
+        for target_param, online_param in zip(
+            self.target_network.parameters(),
+            self.q_network.parameters()
+        ):
+            target_param.data.copy_(
+                self.tau * online_param.data + (1.0 - self.tau) * target_param.data
+            )
+
+    def decay_epsilon(self):
+        """Decay exploration rate."""
+        self.epsilon = max(self.epsilon_end, self.epsilon * self.epsilon_decay)
+
+    def end_episode(self):
+        """Called at end of each episode."""
+        self.episode_count += 1
+        self.decay_epsilon()
+
+    def save(self, path: str):
+        """Save agent state."""
+        torch.save({
+            'q_network': self.q_network.state_dict(),
+            'target_network': self.target_network.state_dict(),
+            'optimizer': self.optimizer.state_dict(),
+            'epsilon': self.epsilon,
+            'train_step': self.train_step,
+            'episode_count': self.episode_count,
+            'network_type': self.network_type,
+            'config': self.config
+        }, path)
+
+    def load(self, path: str):
+        """Load agent state."""
+        checkpoint = torch.load(path, map_location=self.device, weights_only=False)
+        self.q_network.load_state_dict(checkpoint['q_network'])
+        self.target_network.load_state_dict(checkpoint['target_network'])
+        self.optimizer.load_state_dict(checkpoint['optimizer'])
+        self.epsilon = checkpoint.get('epsilon', self.epsilon)
+        self.train_step = checkpoint.get('train_step', 0)
+        self.episode_count = checkpoint.get('episode_count', 0)
+
+    def get_stats(self) -> Dict:
+        """Get agent statistics."""
+        return {
+            'network_type': self.network_type,
+            'epsilon': self.epsilon,
+            'train_step': self.train_step,
+            'episode_count': self.episode_count,
+            'buffer_size': len(self.replay_buffer),
+            'lr': self.optimizer.param_groups[0]['lr']
+        }

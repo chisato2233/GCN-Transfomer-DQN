@@ -1,0 +1,16 @@
+---
+description: SAGIN智能路由项目 - 每次新对话自动加载项目文档
+globs:
+alwaysApply: true
+---
+
+# 项目上下文加载规则
+
+每次开始新对话时，**必须先读取 `PROJECTBRIEF.md`** 了解项目背景和当前状态。
+
+如果需要更新项目信息，**请直接更新 `PROJECTBRIEF.md`**，而不是此文件。
+
+## 核心文档
+
+- `PROJECTBRIEF.md` - 项目概述、架构、实验结果（主文档，保持更新）
+- `REQUIREMENTS.md` - 详细需求规格、MDP建模、算法设计

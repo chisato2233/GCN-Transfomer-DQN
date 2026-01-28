@@ -39,6 +39,7 @@ from src.env.sagin_env import SAGINRoutingEnv
 from src.agents.dqn_gcn_transformer_v3 import DQNGCNTransformerAgentV3
 from src.baselines.q_routing import QRoutingAgent, PredictiveQRouting
 from src.baselines.traditional_routing import OSPFRouter, ECMPRouter, AODVRouter, LoadAwareRouter
+from src.baselines.gnn_baselines import SAGINGNNAgent
 
 
 class SimpleBaselines:
@@ -305,6 +306,126 @@ def evaluate_simple_baseline(env, baseline_type: str, num_episodes: int) -> Dict
     return compute_stats(metrics)
 
 
+def evaluate_gnn_baseline(env, network_type: str, config: dict,
+                           num_episodes: int, train_episodes: int = 1000) -> Dict:
+    """
+    Train and evaluate GNN baseline agents (GAT, GraphSAGE, GCN, Dueling).
+
+    Args:
+        env: SAGIN environment
+        network_type: One of 'gat', 'graphsage', 'gcn', 'dueling'
+        config: Configuration dict
+        num_episodes: Number of evaluation episodes
+        train_episodes: Number of training episodes
+    """
+    agent_config = {
+        'feature_dim': 14,  # 8 routing + 6 three-layer features
+        'max_neighbors': config['environment']['max_neighbors'],
+        'hidden_dim': 64,
+        'n_heads': 4,
+        'device': config['hardware']['device'],
+        'lr': 1e-4,
+        'gamma': 0.99,
+        'tau': 0.005,
+        'batch_size': 128,
+        'buffer_capacity': 50000,
+        'epsilon_start': 1.0,
+        'epsilon_end': 0.05,
+        'epsilon_decay': 0.995,
+        'max_grad_norm': 1.0,
+    }
+
+    agent = SAGINGNNAgent(agent_config, network_type=network_type)
+    max_steps = env.max_hops * 2
+
+    # Training phase
+    print(f"    {network_type.upper()}: Training ({train_episodes} episodes)...", flush=True)
+    for ep in range(train_episodes):
+        if ep % 200 == 0:
+            print(f"    {network_type.upper()}: Training {ep}/{train_episodes}...", flush=True)
+
+        obs, info = env.reset()
+        done = False
+        steps = 0
+
+        # Get initial state
+        topo_data = env.get_topology_aware_features()
+        neighbor_features = topo_data['neighbor_topology_features']
+        neighbor_mask = topo_data['neighbor_mask']
+        action_mask = obs['action_mask']
+
+        while not done and steps < max_steps:
+            action = agent.select_action(
+                neighbor_features, neighbor_mask, action_mask, training=True
+            )
+
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            steps += 1
+
+            # Get next state
+            next_topo_data = env.get_topology_aware_features()
+            next_neighbor_features = next_topo_data['neighbor_topology_features']
+            next_neighbor_mask = next_topo_data['neighbor_mask']
+            next_action_mask = obs['action_mask']
+
+            # Store transition
+            agent.store_transition(
+                neighbor_features, neighbor_mask, action, reward,
+                next_neighbor_features, next_neighbor_mask, done,
+                action_mask, next_action_mask
+            )
+
+            # Train
+            agent.train()
+
+            # Update state
+            neighbor_features = next_neighbor_features
+            neighbor_mask = next_neighbor_mask
+            action_mask = next_action_mask
+
+        agent.end_episode()
+
+    # Evaluation phase
+    agent.epsilon = 0.0
+    metrics = defaultdict(list)
+
+    print(f"    {network_type.upper()}: Evaluating ({num_episodes} episodes)...", flush=True)
+    for ep in range(num_episodes):
+        if ep % 50 == 0:
+            print(f"    {network_type.upper()}: {ep}/{num_episodes}...", flush=True)
+
+        obs, info = env.reset()
+        done = False
+        episode_reward = 0
+        steps = 0
+
+        while not done and steps < max_steps:
+            topo_data = env.get_topology_aware_features()
+            neighbor_features = topo_data['neighbor_topology_features']
+            neighbor_mask = topo_data['neighbor_mask']
+            action_mask = obs['action_mask']
+
+            action = agent.select_action(
+                neighbor_features, neighbor_mask, action_mask, training=False
+            )
+
+            obs, reward, terminated, truncated, info = env.step(action)
+            done = terminated or truncated
+            episode_reward += reward
+            steps += 1
+
+        metrics['reward'].append(episode_reward)
+        metrics['success'].append(1.0 if info.get('success', False) else 0.0)
+        metrics['hops'].append(info.get('hop_count', 0))
+        metrics['delay'].append(info.get('total_delay', 0))
+
+        if info.get('success', False) and info.get('optimal_hops', 0) > 0:
+            metrics['efficiency'].append(info['optimal_hops'] / info.get('hop_count', 1))
+
+    return compute_stats(metrics)
+
+
 def compute_stats(metrics: Dict) -> Dict:
     """Compute statistics from metrics."""
     return {
@@ -326,6 +447,7 @@ def print_results(results: Dict[str, Dict]):
     # Categorize methods
     categories = {
         'Our Method': ['V3 Per-Neighbor'],
+        'GNN-DRL (2024)': ['GAT-DQN', 'GraphSAGE-DQN', 'GCN-DQN', 'Dueling-DQN'],
         'Traditional (2024 refs)': ['OSPF', 'ECMP', 'AODV', 'Load-Aware'],
         'Classic RL': ['Q-Routing', 'PQ-Routing'],
         'Simple Baselines': ['Greedy', 'Random'],
@@ -333,6 +455,10 @@ def print_results(results: Dict[str, Dict]):
 
     info_types = {
         'V3 Per-Neighbor': 'Local+Temporal',
+        'GAT-DQN': 'Local+GNN',
+        'GraphSAGE-DQN': 'Local+GNN',
+        'GCN-DQN': 'Local+GNN',
+        'Dueling-DQN': 'Local',
         'OSPF': 'Global',
         'ECMP': 'Global',
         'AODV': 'On-demand',
@@ -438,37 +564,56 @@ def main():
 
     # ==================== Evaluate All Methods ====================
 
-    print("\n[1/8] Evaluating V3 Per-Neighbor Agent...")
+    print("\n[1/12] Evaluating V3 Per-Neighbor Agent...")
     results['V3 Per-Neighbor'] = evaluate_v3_agent(v3_agent, env, args.episodes)
     print(f"    Success Rate: {results['V3 Per-Neighbor']['success_rate']:.1f}%")
 
-    print("\n[2/8] Evaluating Greedy Baseline...")
+    print("\n[2/12] Evaluating Greedy Baseline...")
     results['Greedy'] = evaluate_simple_baseline(env, 'greedy', args.episodes)
     print(f"    Success Rate: {results['Greedy']['success_rate']:.1f}%")
 
-    print("\n[3/8] Evaluating Random Baseline...")
+    print("\n[3/12] Evaluating Random Baseline...")
     results['Random'] = evaluate_simple_baseline(env, 'random', args.episodes)
     print(f"    Success Rate: {results['Random']['success_rate']:.1f}%")
 
-    print("\n[4/8] Evaluating OSPF (Shortest Path)...")
+    print("\n[4/12] Evaluating OSPF (Shortest Path)...")
     results['OSPF'] = evaluate_traditional(env, 'ospf', args.episodes)
     print(f"    Success Rate: {results['OSPF']['success_rate']:.1f}%")
 
-    print("\n[5/8] Evaluating ECMP (Multi-Path)...")
+    print("\n[5/12] Evaluating ECMP (Multi-Path)...")
     results['ECMP'] = evaluate_traditional(env, 'ecmp', args.episodes)
     print(f"    Success Rate: {results['ECMP']['success_rate']:.1f}%")
 
-    print("\n[6/8] Evaluating AODV (On-demand)...")
+    print("\n[6/12] Evaluating AODV (On-demand)...")
     results['AODV'] = evaluate_traditional(env, 'aodv', args.episodes)
     print(f"    Success Rate: {results['AODV']['success_rate']:.1f}%")
 
-    print("\n[7/8] Evaluating Q-Routing (Classic RL)...")
+    print("\n[7/12] Evaluating Q-Routing (Classic RL)...")
     results['Q-Routing'] = evaluate_q_routing(env, args.episodes, 'standard')
     print(f"    Success Rate: {results['Q-Routing']['success_rate']:.1f}%")
 
-    print("\n[8/8] Evaluating Predictive Q-Routing...")
+    print("\n[8/12] Evaluating Predictive Q-Routing...")
     results['PQ-Routing'] = evaluate_q_routing(env, args.episodes, 'predictive')
     print(f"    Success Rate: {results['PQ-Routing']['success_rate']:.1f}%")
+
+    # ==================== GNN Baselines (2024) ====================
+    gnn_train_episodes = 1000  # Training episodes for GNN baselines
+
+    print("\n[9/12] Evaluating GAT-DQN (Graph Attention Network)...")
+    results['GAT-DQN'] = evaluate_gnn_baseline(env, 'gat', config, args.episodes, gnn_train_episodes)
+    print(f"    Success Rate: {results['GAT-DQN']['success_rate']:.1f}%")
+
+    print("\n[10/12] Evaluating GraphSAGE-DQN...")
+    results['GraphSAGE-DQN'] = evaluate_gnn_baseline(env, 'graphsage', config, args.episodes, gnn_train_episodes)
+    print(f"    Success Rate: {results['GraphSAGE-DQN']['success_rate']:.1f}%")
+
+    print("\n[11/12] Evaluating GCN-DQN (Standard GCN)...")
+    results['GCN-DQN'] = evaluate_gnn_baseline(env, 'gcn', config, args.episodes, gnn_train_episodes)
+    print(f"    Success Rate: {results['GCN-DQN']['success_rate']:.1f}%")
+
+    print("\n[12/12] Evaluating Dueling-DQN (No GNN)...")
+    results['Dueling-DQN'] = evaluate_gnn_baseline(env, 'dueling', config, args.episodes, gnn_train_episodes)
+    print(f"    Success Rate: {results['Dueling-DQN']['success_rate']:.1f}%")
 
     # Print comparison
     print_results(results)
@@ -483,15 +628,34 @@ def main():
     print("\n" + "=" * 60)
     print("PAPER-READY SUMMARY")
     print("=" * 60)
-    print(f"""
-Method Comparison (200 episodes):
-- V3 Per-Neighbor (Ours): {results['V3 Per-Neighbor']['success_rate']:.1f}% success
-- OSPF (Global info):     {results['OSPF']['success_rate']:.1f}% success
-- Q-Routing (1993):       {results['Q-Routing']['success_rate']:.1f}% success
-- Greedy:                 {results['Greedy']['success_rate']:.1f}% success
 
-Key Finding: V3 achieves {results['V3 Per-Neighbor']['success_rate'] - results['Greedy']['success_rate']:+.1f}% vs Greedy
-             using only LOCAL information.
+    # Compute improvements
+    v3_rate = results['V3 Per-Neighbor']['success_rate']
+    gat_rate = results.get('GAT-DQN', {}).get('success_rate', 0)
+    sage_rate = results.get('GraphSAGE-DQN', {}).get('success_rate', 0)
+    gcn_rate = results.get('GCN-DQN', {}).get('success_rate', 0)
+
+    print(f"""
+Method Comparison ({args.episodes} episodes):
+
+=== Our Method ===
+- V3 Per-Neighbor (Ours): {v3_rate:.1f}% success
+
+=== GNN-DRL Baselines (2024) ===
+- GAT-DQN:       {results.get('GAT-DQN', {}).get('success_rate', 0):.1f}% success
+- GraphSAGE-DQN: {results.get('GraphSAGE-DQN', {}).get('success_rate', 0):.1f}% success
+- GCN-DQN:       {results.get('GCN-DQN', {}).get('success_rate', 0):.1f}% success
+- Dueling-DQN:   {results.get('Dueling-DQN', {}).get('success_rate', 0):.1f}% success
+
+=== Traditional & Classic ===
+- OSPF (Global):  {results['OSPF']['success_rate']:.1f}% success
+- Q-Routing:      {results['Q-Routing']['success_rate']:.1f}% success
+- Greedy:         {results['Greedy']['success_rate']:.1f}% success
+
+Key Findings:
+1. V3 vs Best GNN Baseline: {v3_rate - max(gat_rate, sage_rate, gcn_rate):+.1f}%
+2. V3 vs Greedy (local only): {v3_rate - results['Greedy']['success_rate']:+.1f}%
+3. Per-Neighbor architecture preserves neighbor-action correspondence
 """)
 
 
