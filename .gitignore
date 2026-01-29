@@ -1,6 +1,5 @@
 *.png
 *.pdf
-*.md
 logs/
 **/_pycache/
 **/*.pyc
